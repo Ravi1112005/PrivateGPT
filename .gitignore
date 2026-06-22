@@ -1,9 +1,35 @@
-sample.pdf
-core/__pycache__/ingest.cpython-314.pyc
-core/__pycache__/query_engine.cpython-314.pyc
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# ── Virtual environment ──────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+
+# ── Runtime data (all under data/) ──────────────────────────────────────────
+data/faiss_index/
+data/sessions/
+data/security/
+data/documents/
+
+# ── Legacy flat data dirs (pre-refactor) ─────────────────────────────────────
+faiss_index/
+sessions_data/
+documents/
 security/users.json
-security/__pycache__/auth.cpython-314.pyc
-sessions/__pycache__/manager.cpython-314.pyc
-sessions_data/05b0419d.json
-sessions_data/ebbc7b6f.json
 security/audit.log
+
+# ── Test / sample files ──────────────────────────────────────────────────────
+sample.pdf
+
+# ── IDE ──────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp

@@ -19,7 +19,7 @@ from config.settings import settings
 from core.embeddings    import EmbeddingsManager
 from core.vector_store  import VectorStoreManager
 from core.ingestion     import IngestionPipeline
-from core.query_engine  import QueryEngine
+from core.graph         import RAGGraphEngine
 from core.ollama_manager import OllamaManager
 
 # ── Auth & Sessions ────────────────────────────────────────────────────────
@@ -86,7 +86,7 @@ session_mgr = _get_session_mgr()
 
 # Per-request objects (cheap to construct — they hold no state themselves)
 pipeline = IngestionPipeline(settings, embeddings, vsm)
-engine   = QueryEngine(vsm, settings)
+engine   = RAGGraphEngine(vsm, settings)
 
 # Bootstrap default admin on first run
 auth_mgr.setup_default_admin()

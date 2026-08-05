@@ -34,19 +34,37 @@ class Settings:
 
     # ── Embedding model ────────────────────────────────────────────────────
     embedding_model: str = "all-MiniLM-L6-v2"
-    embedding_backend: str = "sentence-transformers-v1"
 
     # ── Document chunking ──────────────────────────────────────────────────
-    chunk_size: int = 800
-    chunk_overlap: int = 150
+    chunk_size: int = 1000
+    chunk_overlap: int = 200
 
     # ── Retrieval ──────────────────────────────────────────────────────────
-    fetch_k: int = 25      # Wide candidate pool before filtering
-    top_k: int = 5         # Final chunks sent to LLM
+    fetch_k: int = 25          # Wide candidate pool before filtering
+    top_k: int = 5             # Final chunks sent to LLM
+    neighbor_window: int = 1   # ±N adjacent chunks to include around each hit
 
     # ── LLM ───────────────────────────────────────────────────────────────
     default_model: str = "phi3"
     llm_temperature: float = 0.1
+
+    # ── Contextual Enrichment ─────────────────────────────────────────────
+    contextual_enrichment: bool = True
+    context_model: str = "phi3"          # Small/fast Ollama model for context gen
+
+    # ── Hybrid Search ─────────────────────────────────────────────────────
+    hybrid_search: bool = True
+    bm25_weight: float = 0.4
+    faiss_weight: float = 0.6
+
+    # ── Reranking ─────────────────────────────────────────────────────────
+    reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    rerank_candidates: int = 40          # Candidates fed to reranker
+    rerank_top_n: int = 4                # Final chunks after reranking
+
+    # ── OCR ───────────────────────────────────────────────────────────────
+    ocr_dpi: int = 300                   # DPI for rendering scanned pages
+    tesseract_path: str = ""             # Custom Tesseract binary path (auto-detect if empty)
 
     def __post_init__(self):
         """Create directories and run one-time data migration."""
@@ -114,6 +132,10 @@ class Settings:
     @property
     def audit_file(self) -> Path:
         return self.security_dir / "audit.log"
+
+    @property
+    def bm25_index_path(self) -> Path:
+        return self.index_dir / "bm25_index.pkl"
 
     def index_exists(self) -> bool:
         """True when a valid FAISS index is present on disk."""

@@ -14,6 +14,7 @@ venv/
 env/
 
 # ── Runtime data (all under data/) ──────────────────────────────────────────
+data
 data/faiss_index/
 data/sessions/
 data/security/

@@ -12,12 +12,12 @@ import time
 
 import streamlit as st
 
-from core.query_engine import QueryEngine
+from core.graph import RAGGraphEngine
 from core.ollama_manager import OllamaManager
 
 
 def render_chat_page(
-    engine: QueryEngine,
+    engine: RAGGraphEngine,
     session_mgr,
     ollama: OllamaManager,
     pipeline,

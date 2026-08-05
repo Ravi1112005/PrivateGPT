@@ -64,6 +64,16 @@ def render_documents_page(pipeline, settings) -> None:
 
         if result["ingested"]:
             st.success(f"✅ Indexed: {', '.join(result['ingested'])}")
+
+            # Store enricher in session_state so it persists across reruns
+            if pipeline.enricher is not None:
+                st.session_state["_enricher"] = pipeline.enricher
+
+            if settings.contextual_enrichment:
+                st.info(
+                    "⚡ Deep indexing started in background. "
+                    "You can start chatting — quality will improve automatically."
+                )
         if result["skipped"]:
             st.info(f"⏭ Skipped (unchanged): {', '.join(result['skipped'])}")
         for err in result["errors"]:
@@ -71,6 +81,7 @@ def render_documents_page(pipeline, settings) -> None:
         if result["ingested"]:
             st.info(f"📊 Total: {result['total_chunks']} chunks across {result['total_docs']} doc(s)")
         st.rerun()
+
 
     # ── Document list ──────────────────────────────────────────────────────
     st.markdown("### Indexed documents")
@@ -94,5 +105,10 @@ def render_documents_page(pipeline, settings) -> None:
     if st.button("🔄 Rebuild full index", key="doc_rebuild_btn"):
         with st.spinner("Re-embedding all documents… this may take a few minutes."):
             result = pipeline.rebuild()
+
+        # Store enricher after rebuild too
+        if pipeline.enricher is not None:
+            st.session_state["_enricher"] = pipeline.enricher
+
         st.success(f"✅ Done — {result['total_chunks']} chunks across {result['total_docs']} docs")
         st.rerun()

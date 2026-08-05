@@ -4,8 +4,10 @@ core/ingestion.py — IngestionPipeline
 Handles the full PDF → chunks → embeddings → FAISS index pipeline.
 
 Key behaviours:
+  - Uses PDFProcessor for robust multi-format PDF extraction (text, tables, OCR)
   - Copies uploaded PDFs to data/documents/ permanently (not temp paths)
   - Skips files whose SHA-256 hash hasn't changed (idempotent)
+  - Assigns sequential chunk_index metadata for neighbor expansion
   - Calls vsm.mark_dirty() after updating the index so queries auto-reload
   - Bumped EMBEDDING_BACKEND triggers automatic full re-index on upgrade
 """
@@ -37,7 +39,7 @@ class IngestionPipeline:
         result = pipeline.ingest(["/tmp/upload.pdf"], progress_callback=my_cb)
     """
 
-    EMBEDDING_BACKEND = "sentence-transformers-v1"
+    EMBEDDING_BACKEND = "v4-robust-pdf"
 
     def __init__(
         self,
@@ -48,6 +50,7 @@ class IngestionPipeline:
         self._settings = settings
         self._embeddings = embeddings
         self._vsm = vsm
+        self.enricher = None  # BackgroundEnricher instance (set after ingestion)
 
     # ── Public API ─────────────────────────────────────────────────────────
 
@@ -131,14 +134,21 @@ class IngestionPipeline:
         metadata: Dict,
         progress_callback: Optional[ProgressCallback],
     ) -> Dict:
-        from langchain_community.document_loaders import PyPDFLoader          # noqa
         from langchain_community.vectorstores import FAISS                     # noqa
         from langchain_text_splitters import RecursiveCharacterTextSplitter    # noqa
+        from core.pdf_processor import PDFProcessor                           # noqa
 
-        splitter = RecursiveCharacterTextSplitter(
+        # O(n) pure string scan — no model calls during splitting
+        chunker = RecursiveCharacterTextSplitter(
             chunk_size=self._settings.chunk_size,
             chunk_overlap=self._settings.chunk_overlap,
-            separators=["\n\n", "\n", ". ", " ", ""],
+            separators=["\n\n", "\n", ". ", "! ", "? ", "; ", " ", ""],
+        )
+
+        # Robust PDF extraction (handles text, tables, OCR)
+        pdf_processor = PDFProcessor(
+            ocr_dpi=self._settings.ocr_dpi,
+            tesseract_path=self._settings.tesseract_path,
         )
 
         new_docs: List = []
@@ -163,15 +173,23 @@ class IngestionPipeline:
                     skipped.append(name)
                     continue
 
-                # Load and chunk
-                loader = PyPDFLoader(str(perm))
-                pages  = loader.load()
-                chunks = splitter.split_documents(pages)
+                # Extract pages using robust PDFProcessor
+                pages = pdf_processor.extract(str(perm))
 
-                for chunk in chunks:
+                if not pages:
+                    errors.append({"file": name, "error": "No extractable content found"})
+                    continue
+
+                # Chunk the extracted pages
+                chunks = chunker.split_documents(pages)
+
+                # Assign sequential chunk_index for neighbor expansion
+                for idx, chunk in enumerate(chunks):
                     chunk.metadata["source_file"] = name
-                    raw_page = chunk.metadata.get("page", 0)
-                    chunk.metadata["page"] = (raw_page + 1) if isinstance(raw_page, int) else raw_page
+                    chunk.metadata["chunk_index"] = idx
+                    # Ensure page is 1-indexed (PDFProcessor already does this)
+                    if "page" not in chunk.metadata:
+                        chunk.metadata["page"] = "?"
 
                 new_docs.extend(chunks)
                 metadata[name] = {
@@ -187,6 +205,7 @@ class IngestionPipeline:
                 errors.append({"file": name, "error": str(exc)})
 
         # Build / extend FAISS index
+        all_indexed_docs: List = []
         if new_docs:
             if progress_callback:
                 progress_callback(len(pdf_paths), len(pdf_paths), "Building vector index…")
@@ -204,19 +223,49 @@ class IngestionPipeline:
 
             db.save_local(idx_dir)
 
+            # Collect all indexed docs for BM25 (existing + new)
+            all_indexed_docs = list(db.docstore._dict.values())
+
+            # Build BM25 index alongside FAISS
+            try:
+                from rank_bm25 import BM25Okapi  # noqa
+                import pickle
+
+                corpus = [doc.page_content for doc in all_indexed_docs]
+                tokenized = [text.lower().split() for text in corpus]
+                bm25 = BM25Okapi(tokenized)
+
+                with open(self._settings.bm25_index_path, "wb") as f:
+                    pickle.dump({"bm25": bm25, "docs": all_indexed_docs}, f)
+            except ImportError:
+                pass  # rank_bm25 not installed — fall back to FAISS-only
+
             # Signal VectorStoreManager that the on-disk index has changed
             self._vsm.mark_dirty()
 
         self._save_metadata(metadata)
         self._save_state()
 
-        return {
+        result = {
             "ingested":     ingested,
             "skipped":      skipped,
             "errors":       errors,
             "total_chunks": sum(v["chunks"] for v in metadata.values()),
             "total_docs":   len(metadata),
         }
+
+        # Launch background enrichment (non-blocking) if enabled and docs were indexed
+        if ingested and self._settings.contextual_enrichment and all_indexed_docs:
+            try:
+                from core.enrichment import BackgroundEnricher  # noqa
+                self.enricher = BackgroundEnricher(
+                    self._settings, self._embeddings, self._vsm
+                )
+                self.enricher.start(new_docs)
+            except Exception:  # noqa: BLE001
+                pass  # Enrichment is optional — never block the user
+
+        return result
 
     def _wipe_index(self) -> None:
         idx_dir = self._settings.index_dir

@@ -2,7 +2,7 @@
 ui/sidebar.py — Sidebar rendering
 
 Renders the persistent sidebar: branding, Ollama status, navigation,
-document filter, model selector, and debug toggle.
+document filter, model selector, debug toggle, and enrichment badge.
 
 Returns the chosen active_tab string.
 """
@@ -77,14 +77,19 @@ def render_sidebar(
 
         st.divider()
 
-        # ── Document filter ────────────────────────────────────────────────
         docs = pipeline.list_documents()
         if docs:
             all_names = [d["name"] for d in docs]
+            
+            # Ensure defaults only contain valid options
+            valid_defaults = []
+            if st.session_state.selected_docs:
+                valid_defaults = [name for name in st.session_state.selected_docs if name in all_names]
+
             selected  = st.multiselect(
                 "Filter by document",
                 options=all_names,
-                default=st.session_state.selected_docs or all_names,
+                default=valid_defaults or all_names,
                 key="sb_doc_filter",
             )
             st.session_state.selected_docs = selected
@@ -111,3 +116,23 @@ def render_sidebar(
         # ── Footer stats ───────────────────────────────────────────────────
         st.caption(f"🗂 {len(docs)} doc(s) indexed")
         st.caption("🔴 Network: air-gapped")
+
+        # ── Enrichment status badge ────────────────────────────────────────
+        # Read from session_state (persists across Streamlit reruns)
+        enricher = st.session_state.get("_enricher")
+        if enricher is not None:
+            try:
+                enr_status = enricher.status
+                if enr_status["running"]:
+                    pct = int(enr_status["done"] / max(enr_status["total"], 1) * 100)
+                    st.markdown(
+                        f'<span class="status-ok">⚡ Enhancing: {pct}%</span>',
+                        unsafe_allow_html=True,
+                    )
+                elif enr_status["done"] > 0:
+                    st.markdown(
+                        '<span class="status-ok">✨ Deep indexing done</span>',
+                        unsafe_allow_html=True,
+                    )
+            except Exception:  # noqa: BLE001
+                pass  # Enricher may have been garbage collected

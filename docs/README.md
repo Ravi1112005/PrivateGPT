@@ -24,11 +24,13 @@ python -m venv venv
 venv\Scripts\activate       # Windows
 pip install -r requirements.txt
 
-# 2. Install Ollama (one-time)
-# Download from https://ollama.com/download
+# 2. Install UI Dependencies
+cd electron
+npm install
+cd ..
 
 # 3. Run
-streamlit run app.py
+start-app.bat
 ```
 
 **Default login:** `admin / admin123`

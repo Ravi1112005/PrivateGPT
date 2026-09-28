@@ -140,9 +140,9 @@ All indexed documents are shared across all users (organizational knowledge base
 | Threat | Why Not Addressed |
 |--------|------------------|
 | Physical access to the machine | Out of scope for an application-level tool. Use OS-level disk encryption (BitLocker, LUKS). |
-| Network-based attacks on Streamlit | Streamlit is designed for trusted networks. For multi-user deployment, use a reverse proxy with TLS. |
+| Network-based attacks on FastAPI | FastAPI binds to localhost by default. The Electron app connects locally. |
 | `users.json` file access | Protected by OS file permissions. The file is gitignored. |
-| Session hijacking | Streamlit's built-in session management. No custom session tokens. |
+| Session hijacking | Handled internally within the JS SPA memory and FastAPI. |
 
 ---
 

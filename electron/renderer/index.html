@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PrivateGPT</title>
+  <meta name="description" content="Air-gapped RAG chat powered by Ollama — your documents, your machine, zero cloud." />
+
+  <!-- Google Fonts: Inter + JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <!-- Lucide Icons (latest CDN) -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- ═══ Custom Titlebar ═══ -->
+  <header id="titlebar">
+    <div class="titlebar-drag">
+      <div class="titlebar-logo">
+        <i data-lucide="shield-check" class="logo-icon"></i>
+        <span class="logo-text">PrivateGPT</span>
+        <span class="logo-badge">v2.0</span>
+      </div>
+    </div>
+    <div class="titlebar-controls">
+      <button id="btn-minimize" class="titlebar-btn" aria-label="Minimize">
+        <i data-lucide="minus"></i>
+      </button>
+      <button id="btn-maximize" class="titlebar-btn" aria-label="Maximize">
+        <i data-lucide="square"></i>
+      </button>
+      <button id="btn-close" class="titlebar-btn titlebar-btn-close" aria-label="Close">
+        <i data-lucide="x"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- ═══ Loading Overlay ═══ -->
+  <div id="loading-overlay">
+    <div class="loading-content">
+      <div class="loading-spinner"></div>
+      <h2>Starting PrivateGPT</h2>
+      <p id="loading-status">Initializing backend engine…</p>
+    </div>
+  </div>
+
+  <!-- ═══ Main Layout ═══ -->
+  <div id="app-container">
+
+    <!-- ─── Sidebar ─── -->
+    <aside id="sidebar">
+
+      <!-- Ollama Status -->
+      <div id="ollama-status" class="sidebar-section">
+        <div class="status-indicator">
+          <span id="ollama-dot" class="status-dot offline"></span>
+          <span id="ollama-label">Checking…</span>
+        </div>
+        <button id="btn-start-ollama" class="btn-sm btn-accent hidden">
+          <i data-lucide="play"></i> Start Ollama
+        </button>
+      </div>
+
+      <!-- New Chat Button -->
+      <button id="btn-new-chat" class="btn-primary-full">
+        <i data-lucide="plus"></i>
+        <span>New Chat</span>
+      </button>
+
+      <!-- Navigation -->
+      <nav class="sidebar-nav">
+        <button class="nav-item active" data-page="chat">
+          <i data-lucide="message-square"></i>
+          <span>Chat</span>
+        </button>
+        <button class="nav-item" data-page="documents">
+          <i data-lucide="file-text"></i>
+          <span>Documents</span>
+        </button>
+        <button class="nav-item" data-page="models">
+          <i data-lucide="cpu"></i>
+          <span>Models</span>
+        </button>
+        <button class="nav-item" data-page="history">
+          <i data-lucide="clock"></i>
+          <span>History</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-divider"></div>
+
+      <!-- Document Filter -->
+      <div id="doc-filter-section" class="sidebar-section">
+        <h4 class="sidebar-heading">
+          <i data-lucide="filter"></i> Document Filter
+        </h4>
+        <div id="doc-filter-list" class="filter-list">
+          <p class="muted-text">No documents indexed</p>
+        </div>
+      </div>
+
+      <div class="sidebar-divider"></div>
+
+      <!-- Model Selector -->
+      <div class="sidebar-section">
+        <h4 class="sidebar-heading">
+          <i data-lucide="brain"></i> Active Model
+        </h4>
+        <select id="model-selector" class="select-modern">
+          <option value="">No models available</option>
+        </select>
+      </div>
+
+      <!-- Debug Toggle -->
+      <div class="sidebar-section">
+        <label class="toggle-label">
+          <input type="checkbox" id="debug-toggle" />
+          <span class="toggle-slider"></span>
+          <span><i data-lucide="bug"></i> Debug Context</span>
+        </label>
+      </div>
+
+      <!-- Footer Stats -->
+      <div class="sidebar-footer">
+        <div class="footer-stat">
+          <i data-lucide="folder"></i>
+          <span id="footer-doc-count">0 docs indexed</span>
+        </div>
+        <div class="footer-stat">
+          <i data-lucide="wifi-off"></i>
+          <span>Air-gapped</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ─── Main Content ─── -->
+    <main id="main-content">
+
+      <!-- ═══ Chat Page ═══ -->
+      <div id="page-chat" class="page active">
+        <div class="page-header">
+          <h1 class="page-title">
+            <i data-lucide="message-square"></i> Chat with your Documents
+          </h1>
+          <div class="page-actions">
+            <button id="btn-new-chat-header" class="btn-icon-text" title="New conversation">
+              <i data-lucide="plus-circle"></i>
+              <span>New Chat</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Chat Messages Area -->
+        <div id="chat-messages" class="chat-messages">
+          <!-- Welcome state -->
+          <div id="chat-welcome" class="chat-welcome">
+            <div class="welcome-icon">
+              <i data-lucide="sparkles"></i>
+            </div>
+            <h2>Welcome to PrivateGPT</h2>
+            <p>Ask anything about your uploaded documents. Everything runs locally on your machine.</p>
+            <div class="welcome-chips">
+              <button class="chip" onclick="fillQuestion('Summarize the key points of the document')">
+                <i data-lucide="list"></i> Summarize key points
+              </button>
+              <button class="chip" onclick="fillQuestion('What are the main conclusions?')">
+                <i data-lucide="target"></i> Main conclusions
+              </button>
+              <button class="chip" onclick="fillQuestion('Explain the methodology used')">
+                <i data-lucide="flask-conical"></i> Explain methodology
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat Input -->
+        <div class="chat-input-container">
+          <div class="chat-input-wrapper">
+            <textarea
+              id="chat-input"
+              placeholder="Ask anything about your documents…"
+              rows="1"
+              autofocus
+            ></textarea>
+            <button id="btn-send" class="btn-send" disabled>
+              <i data-lucide="arrow-up"></i>
+            </button>
+          </div>
+          <p class="input-hint">PrivateGPT runs 100% locally — your data never leaves this machine</p>
+        </div>
+      </div>
+
+      <!-- ═══ Documents Page ═══ -->
+      <div id="page-documents" class="page">
+        <div class="page-header">
+          <h1 class="page-title">
+            <i data-lucide="file-text"></i> Document Manager
+          </h1>
+          <div class="page-actions">
+            <button id="btn-upload-docs" class="btn-icon-text btn-accent">
+              <i data-lucide="upload"></i>
+              <span>Upload PDFs</span>
+            </button>
+            <button id="btn-rebuild-index" class="btn-icon-text">
+              <i data-lucide="refresh-cw"></i>
+              <span>Rebuild Index</span>
+            </button>
+          </div>
+        </div>
+        <div id="documents-list" class="card-grid">
+          <div class="empty-state">
+            <i data-lucide="file-plus"></i>
+            <p>No documents indexed yet</p>
+            <span>Upload PDF files to get started</span>
+          </div>
+        </div>
+        <!-- Upload Progress -->
+        <div id="upload-progress" class="progress-bar-container hidden">
+          <div class="progress-bar">
+            <div id="upload-progress-fill" class="progress-fill"></div>
+          </div>
+          <span id="upload-progress-text">Uploading…</span>
+        </div>
+      </div>
+
+      <!-- ═══ Models Page ═══ -->
+      <div id="page-models" class="page">
+        <div class="page-header">
+          <h1 class="page-title">
+            <i data-lucide="cpu"></i> Model Manager
+          </h1>
+        </div>
+
+        <!-- Downloaded Models -->
+        <section class="content-section">
+          <h2 class="section-title">
+            <i data-lucide="hard-drive-download"></i> Downloaded Models
+          </h2>
+          <div id="downloaded-models" class="card-list">
+            <div class="empty-state small">
+              <i data-lucide="package-open"></i>
+              <p>No models downloaded</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Recommended Models -->
+        <section class="content-section">
+          <h2 class="section-title">
+            <i data-lucide="star"></i> Recommended Models
+          </h2>
+          <p class="section-subtitle">⚠️ Requires internet on first pull only. Fully offline after that.</p>
+          <div id="recommended-models" class="card-list"></div>
+        </section>
+
+        <!-- Custom Pull -->
+        <section class="content-section">
+          <h2 class="section-title">
+            <i data-lucide="download"></i> Pull Custom Model
+          </h2>
+          <div class="input-group">
+            <input type="text" id="custom-model-input" class="input-modern" placeholder="e.g. gemma:2b, codellama:7b" />
+            <button id="btn-pull-custom" class="btn-accent">
+              <i data-lucide="download"></i> Pull
+            </button>
+          </div>
+        </section>
+      </div>
+
+      <!-- ═══ History Page ═══ -->
+      <div id="page-history" class="page">
+        <div class="page-header">
+          <h1 class="page-title">
+            <i data-lucide="clock"></i> Chat History
+          </h1>
+        </div>
+        <div id="history-list" class="card-list">
+          <div class="empty-state">
+            <i data-lucide="message-square-dashed"></i>
+            <p>No saved chats yet</p>
+            <span>Your conversations will appear here</span>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

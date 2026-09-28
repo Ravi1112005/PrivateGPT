@@ -1,24 +1,34 @@
 # ── Python ──────────────────────────────────────────────────────────────────
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
 *.egg-info/
 .eggs/
-dist/
-build/
 
 # ── Virtual environment ──────────────────────────────────────────────────────
 venv/
 .venv/
 env/
+ENV/
+
+# ── Node.js / Electron ───────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+electron/dist/
+electron/out/
+*.exe
+
+# ── Build & Distribution ─────────────────────────────────────────────────────
+dist/
+build/
+*.spec
+PrivateGPT-Setup.exe
+OllamaSetup.exe
 
 # ── Runtime data (all under data/) ──────────────────────────────────────────
-data
-data/faiss_index/
-data/sessions/
-data/security/
-data/documents/
+data/
 
 # ── Legacy flat data dirs (pre-refactor) ─────────────────────────────────────
 faiss_index/
@@ -27,12 +37,36 @@ documents/
 security/users.json
 security/audit.log
 
-# ── Test / sample files ──────────────────────────────────────────────────────
-sample.pdf
+# ── Testing & Code Coverage ──────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
 
-# ── IDE ──────────────────────────────────────────────────────────────────────
+# ── OS Generated Files ───────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# ── Logs & Environments ──────────────────────────────────────────────────────
+*.log
+.env
+.env.local
+.env.*.local
+
+# ── IDE & Editor ─────────────────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
+*.swo
+.project
+.classpath
+.settings/
 
-electron\node_modules
+# ── Test / sample files ──────────────────────────────────────────────────────
+sample.pdf

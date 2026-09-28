@@ -1,0 +1,71 @@
+{
+  "name": "privategpt",
+  "version": "2.0.0",
+  "description": "PrivateGPT — Air-gapped RAG Chat powered by Ollama",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder --win"
+  },
+  "author": "PrivateGPT",
+  "license": "MIT",
+  "dependencies": {
+    "electron": "^33.0.0"
+  },
+  "devDependencies": {
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.privategpt.desktop",
+    "productName": "PrivateGPT",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "uninstallDisplayName": "PrivateGPT",
+      "createDesktopShortcut": true,
+      "include": "installer.nsh"
+    },
+    "extraResources": [
+      {
+        "from": "../backend",
+        "to": "backend"
+      },
+      {
+        "from": "../core",
+        "to": "core"
+      },
+      {
+        "from": "../config",
+        "to": "config"
+      },
+      {
+        "from": "../security",
+        "to": "security"
+      },
+      {
+        "from": "../sessions",
+        "to": "sessions"
+      },
+      {
+        "from": "../requirements.txt",
+        "to": "requirements.txt"
+      },
+      {
+        "from": "../setup_env.bat",
+        "to": "setup_env.bat"
+      },
+      {
+        "from": "../download_embeddings.py",
+        "to": "download_embeddings.py"
+      }
+    ]
+  }
+}

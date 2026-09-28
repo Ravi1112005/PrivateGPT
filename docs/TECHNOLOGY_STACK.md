@@ -6,16 +6,15 @@ Every technology in PrivateGPT was chosen to satisfy a single non-negotiable con
 
 ## Core Framework
 
-### Streamlit
+### Electron + FastAPI
 
 | | |
 |---|---|
-| **What** | Python web framework for data-centric applications |
+| **What** | Desktop app framework (Electron) and async Python web framework (FastAPI) |
 | **Version** | Latest stable |
-| **Why chosen** | Single-file web apps with zero JavaScript. Built-in session state, caching (`@st.cache_resource`), file uploaders, progress bars, and streaming — all from pure Python. No React/Vue build step. |
-| **Why not Flask/FastAPI** | Those require a separate frontend. Streamlit gives us a production-quality UI with 1/10th the code. For a local-first tool, the trade-off (less CSS control vs. massive development speed) is strongly in Streamlit's favor. |
-| **Why not Gradio** | Gradio is optimized for ML demos, not multi-page apps with auth, navigation, and persistent state. Streamlit's `session_state` and page routing are critical for PrivateGPT's UX. |
-| **How used** | `app.py` is the entry point. `@st.cache_resource` manages singletons. `st.session_state` manages auth, navigation, and chat history. The entire UI layer (`ui/`) uses only Streamlit APIs. |
+| **Why chosen** | Replaced Streamlit to provide instant UI transitions, native desktop features, and better control over the application state. FastAPI serves the Python core logic via REST and SSE, while Electron renders the interface without Python reruns. |
+| **Why not Streamlit** | Streamlit re-executes the entire script on every interaction, which caused slow UI transitions and required complex caching workarounds. |
+| **How used** | `electron/main.js` launches `backend/server.py` as a subprocess. The UI connects via standard HTTP requests and EventSource for streaming. |
 
 ---
 

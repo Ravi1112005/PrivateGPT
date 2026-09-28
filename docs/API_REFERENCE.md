@@ -148,7 +148,7 @@ RAGGraphEngine(vsm: VectorStoreManager, settings: Settings)
 | Method | Signature | Returns | Description |
 |--------|-----------|---------|-------------|
 | `retrieve` | `(question, filter_files?) → (source_docs, context, prompt_text)` | Tuple | Phase 1: Retrieve + rerank. Used for immediate source chip display. |
-| `stream_answer` | `(prompt_text, model) → Generator[str]` | Token generator | Phase 2: Stream tokens from Ollama. Use with `st.write_stream()`. |
+| `stream_answer` | `(prompt_text, model) → Generator[str]` | Token generator | Phase 2: Stream tokens from Ollama. Returned over SSE. |
 | `query` | `(question, model, filter_files?) → dict` | `{answer, sources, metrics, context}` | Full graph invocation (non-streaming). Used for session export. |
 
 ---

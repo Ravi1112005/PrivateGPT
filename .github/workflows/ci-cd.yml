@@ -1,0 +1,58 @@
+name: PrivateGPT CI/CD
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    name: Run Automated Tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest httpx pytest-asyncio
+
+      - name: Run PyTest
+        run: |
+          python -m pytest tests/test_backend.py
+
+  build:
+    name: Build Desktop Application (CD)
+    needs: test
+    runs-on: windows-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install Electron Dependencies
+        working-directory: ./electron
+        run: npm install
+
+      - name: Build Electron App
+        working-directory: ./electron
+        run: npm run build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Setup Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: PrivateGPT-Setup
+          path: electron/dist/*.exe

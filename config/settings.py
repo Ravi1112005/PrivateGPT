@@ -30,10 +30,11 @@ class Settings:
     documents_dir: Path = field(default_factory=lambda: BASE_DIR / "data" / "documents")
     index_dir: Path = field(default_factory=lambda: BASE_DIR / "data" / "faiss_index")
     sessions_dir: Path = field(default_factory=lambda: BASE_DIR / "data" / "sessions")
-    security_dir: Path = field(default_factory=lambda: BASE_DIR / "data" / "security")
+    models_dir: Path = field(default_factory=lambda: BASE_DIR / "data" / "models" / "embeddings")
 
     # ── Embedding model ────────────────────────────────────────────────────
     embedding_model: str = "all-MiniLM-L6-v2"
+    embedding_model_path: Path = field(default_factory=lambda: BASE_DIR / "data" / "models" / "embeddings" / "all-MiniLM-L6-v2")
 
     # ── Document chunking ──────────────────────────────────────────────────
     chunk_size: int = 1000
@@ -73,7 +74,7 @@ class Settings:
             self.documents_dir,
             self.index_dir,
             self.sessions_dir,
-            self.security_dir,
+            self.models_dir,
         ):
             d.mkdir(parents=True, exist_ok=True)
 
@@ -104,12 +105,6 @@ class Settings:
                     if not target.exists():
                         shutil.copy2(item, target)
 
-        # Security data files (only data files, not auth.py code)
-        for fname in ("users.json", "audit.log"):
-            src = self.base_dir / "security" / fname
-            dst = self.security_dir / fname
-            if src.exists() and not dst.exists():
-                shutil.copy2(src, dst)
 
     # ── Derived paths ──────────────────────────────────────────────────────
 
@@ -125,13 +120,7 @@ class Settings:
     def index_state_path(self) -> Path:
         return self.index_dir / "index_state.json"
 
-    @property
-    def users_file(self) -> Path:
-        return self.security_dir / "users.json"
 
-    @property
-    def audit_file(self) -> Path:
-        return self.security_dir / "audit.log"
 
     @property
     def bm25_index_path(self) -> Path:

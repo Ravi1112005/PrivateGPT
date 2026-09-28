@@ -8,7 +8,7 @@ PrivateGPT is a fully air-gapped, local-first document intelligence system. It r
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│                         Streamlit Frontend                           │
+│                     Electron Desktop Frontend                        │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────────┐ │
 │  │   Chat   │ │Documents │ │  Models  │ │ History  │ │   Admin   │ │
 │  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └─────┬─────┘ │
@@ -17,10 +17,10 @@ PrivateGPT is a fully air-gapped, local-first document intelligence system. It r
 │  │                       Sidebar (Navigation + State)              │ │
 │  └─────────────────────────────┬───────────────────────────────────┘ │
 └────────────────────────────────┼─────────────────────────────────────┘
-                                 │
+                                 │ HTTP + SSE (FastAPI)
                     ┌────────────┴────────────┐
-                    │        app.py           │
-                    │   (Entry Point + DI)    │
+                    │      backend/server.py  │
+                    │   (REST API + Routing)  │
                     └────────────┬────────────┘
                                  │
         ┌────────────────────────┼────────────────────────┐
@@ -77,15 +77,15 @@ The only network call is the initial one-time download of Ollama models. After t
 
 ```
 ┌─────────────────────────────────────┐
-│  UI Layer (ui/)                     │  Streamlit-only. No business logic.
-│  - Pages render state               │  Never imports from core/ internals.
-│  - Sidebar manages navigation       │
+│  Electron UI Layer (electron/)      │  Desktop frontend. No business logic.
+│  - SPA rendering                    │  Communicates via REST and SSE.
+│  - Main process and Window          │
 ├─────────────────────────────────────┤
-│  Entry Point (app.py)               │  Wires everything together with DI.
-│  - @st.cache_resource singletons    │  The only file that knows about both
-│  - Session state defaults            │  ui/ and core/.
+│  FastAPI Backend (backend/)         │  REST API + Event routing.
+│  - Endpoint definitions             │  Connects the UI to the core logic.
+│  - SSE Streaming endpoints          │
 ├─────────────────────────────────────┤
-│  Core Layer (core/)                 │  Pure Python. Zero Streamlit imports.
+│  Core Layer (core/)                 │  Pure Python. Zero UI/Backend dependencies.
 │  - PDF extraction                    │  Can be tested independently.
 │  - Embeddings, vector store          │  Thread-safe where needed.
 │  - LangGraph RAG pipeline           │
@@ -99,35 +99,35 @@ The only network call is the initial one-time download of Ollama models. After t
 └─────────────────────────────────────┘
 ```
 
-**Why this matters:** The core layer has zero Streamlit dependencies. You can import and use `PDFProcessor`, `VectorStoreManager`, or `RAGGraphEngine` in a plain Python script, a Flask API, or a test harness — no UI framework lock-in.
+**Why this matters:** The core layer has zero Electron/FastAPI dependencies. You can import and use `PDFProcessor`, `VectorStoreManager`, or `RAGGraphEngine` in a plain Python script or a test harness.
 
-### 3. Singleton Pattern via `@st.cache_resource`
+### 3. Singleton Pattern via Module-Level Instantiation
 
 Heavy objects are loaded exactly once and kept in RAM:
 
 | Object | Load time | Memory | Reused across |
 |--------|-----------|--------|---------------|
-| `EmbeddingsManager` | ~10s (first load) | ~80 MB | All users, all reruns |
-| `VectorStoreManager` | ~4s (first load) | Varies by index size | All users, all reruns |
-| `OllamaManager` | Instant | Negligible | All users, all reruns |
-| `AuthManager` | Instant | Negligible | All users, all reruns |
-| `SessionManager` | Instant | Negligible | All users, all reruns |
+| `EmbeddingsManager` | ~10s (first load) | ~80 MB | All requests |
+| `VectorStoreManager` | ~4s (first load) | Varies by index size | All requests |
+| `OllamaManager` | Instant | Negligible | All requests |
+| `AuthManager` | Instant | Negligible | All requests |
+| `SessionManager` | Instant | Negligible | All requests |
 
-**Why:** Streamlit reruns the entire `app.py` on every user interaction (button click, input change). Without `@st.cache_resource`, the embedding model would reload from disk on every click — a 10-second delay each time.
+**Why:** Loading the embedding model from disk takes 10 seconds. By instantiating it once at the module level in the FastAPI backend, it stays resident in memory and handles all subsequent API requests instantly.
 
 ### 4. Dependency Injection
 
 Core components receive their dependencies through constructor arguments, not global imports:
 
 ```python
-# In app.py — the only place where wiring happens
-embeddings = _get_embeddings()          # Singleton
-vsm        = _get_vector_store()        # Depends on embeddings
-pipeline   = IngestionPipeline(settings, embeddings, vsm)  # Injected
-engine     = RAGGraphEngine(vsm, settings)                 # Injected
+# In backend/server.py — the only place where wiring happens
+embeddings = EmbeddingsManager(settings.embedding_model)
+embeddings.preload()
+vsm = VectorStoreManager(settings.index_dir, embeddings)
+ollama = OllamaManager()
 ```
 
-**Why:** This makes every core class independently testable. You can construct a `VectorStoreManager` with a mock `EmbeddingsManager` in a unit test — no Streamlit, no Ollama, no disk.
+**Why:** This makes every core class independently testable. You can construct a `VectorStoreManager` with a mock `EmbeddingsManager` in a unit test — no UI, no Ollama, no disk.
 
 ---
 

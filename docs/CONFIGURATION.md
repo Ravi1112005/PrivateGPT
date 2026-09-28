@@ -150,6 +150,6 @@ These are computed from the base settings and cannot be set directly:
 
 1. Open `config/settings.py`
 2. Modify the default value of any field
-3. Restart Streamlit (`streamlit run app.py`)
+3. Restart the app (`start-app.bat`)
 
 **If you change `embedding_model`:** You must also bump the `EMBEDDING_BACKEND` constant in `core/ingestion.py` and rebuild the index. The app will show a migration banner automatically.

@@ -136,7 +136,7 @@ The `validate` node performs a zero-latency heuristic grounding check: it verifi
 
 | Step | Code Location | What Happens |
 |------|---------------|-------------|
-| 1. **Launch** | `core/enrichment.py` → `BackgroundEnricher.start()` | A Python daemon thread starts (dies when Streamlit stops). |
+| 1. **Launch** | `core/enrichment.py` → `BackgroundEnricher.start()` | A Python daemon thread starts (dies when FastAPI backend stops). |
 | 2. **Per-chunk enrichment** | `core/enrichment.py` → `_enrich_loop()` | For each chunk, the LLM (phi3) generates a 1-2 sentence context summary: *"This chunk is from document X, page Y, discussing Z."* |
 | 3. **Prepend context** | `core/enrichment.py` → `_enrich_loop()` | Context is prepended as `[Context: ...]` to the chunk text. |
 | 4. **Re-index** | `core/enrichment.py` → `_rebuild_indexes()` | Enriched chunks are re-embedded and stored in FAISS + BM25. |

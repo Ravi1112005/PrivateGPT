@@ -26,10 +26,14 @@ PrivateGPT is a fully local RAG (Retrieval-Augmented Generation) system that let
 ## 🏗️ Architecture
 
 ```
-Streamlit UI ──▶ app.py (DI + Routing) ──▶ core/ (Pure Python)
-                                               │
-                    ┌──────────────────────────┼──────────────────────────┐
-                    │                          │                          │
+Electron UI ──▶ app.js (SPA Logic) ──▶ renderer/ (HTML/CSS)
+                                                │
+                    ┌───────────────────────────┴────────────────────────────┐
+                    │                                                        │
+              FastAPI Backend (server.py) ──▶ core/ (Pure Python)            │
+                                                                             │
+                    ┌──────────────────────────┼──────────────────────────┐  │
+                    │                          │                          │  │
               PDFProcessor              VectorStoreManager         RAGGraphEngine
              (text/table/OCR)           (FAISS + BM25 + RRF)     (LangGraph pipeline)
                     │                          │                          │
@@ -37,7 +41,7 @@ Streamlit UI ──▶ app.py (DI + Routing) ──▶ core/ (Pure Python)
             IngestionPipeline ──▶ BackgroundEnricher ──▶ Ollama LLM (localhost)
 ```
 
-**Design principles:** Clean layer separation (UI ↔ Business Logic), dependency injection, singleton caching via `@st.cache_resource`, thread-safe concurrent access.
+**Design principles:** Clean layer separation (Frontend ↔ Backend ↔ Core Logic), dependency injection, module-level singleton caching, thread-safe concurrent access.
 
 ---
 
@@ -60,13 +64,18 @@ venv\Scripts\activate           # Windows
 # source venv/bin/activate      # Linux/macOS
 pip install -r requirements.txt
 
-# 2. Run
-streamlit run app.py
+# 2. Install Electron Dependencies
+cd electron
+npm install
+cd ..
+
+# 3. Run
+start-app.bat
 ```
 
 ### First Use
 
-1. Open http://localhost:8501
+1. Run the app using `start-app.bat` which will open the Desktop Window.
 2. Sign in: `admin / admin123`
 3. Go to **🤖 Models** → Pull **Phi-3 Mini** (3.8B, ~2.2 GB)
 4. Go to **📄 Documents** → Upload PDFs → Click **Index documents**
@@ -82,13 +91,18 @@ Install [Tesseract](https://github.com/UB-Mannheim/tesseract/wiki) to `C:\Progra
 
 ```
 PrivateGPT/
-├── app.py                          # Entry point + DI wiring
+├── backend/
+│   └── server.py                   # FastAPI REST + SSE backend
+├── electron/                       # Electron frontend
+│   ├── main.js                     # Main process
+│   ├── package.json
+│   └── renderer/                   # SPA frontend code
 ├── requirements.txt                # Python dependencies
 │
 ├── config/
 │   └── settings.py                 # Central configuration (dataclass)
 │
-├── core/                           # Business logic (pure Python, no Streamlit)
+├── core/                           # Business logic (pure Python)
 │   ├── pdf_processor.py            # 3-tier PDF extraction (text/table/OCR)
 │   ├── embeddings.py               # EmbeddingsManager (all-MiniLM-L6-v2)
 │   ├── ingestion.py                # IngestionPipeline (PDF → FAISS)
@@ -108,15 +122,8 @@ PrivateGPT/
 ├── sessions/
 │   └── manager.py                  # SessionManager (per-user JSON)
 │
-├── ui/                             # Streamlit presentation layer
-│   ├── styles.py                   # CSS injection (dark theme)
-│   ├── sidebar.py                  # Sidebar rendering
-│   └── pages/
-│       ├── chat.py                 # Streaming chat
-│       ├── documents.py            # Document manager
-│       ├── models.py              # Model manager
-│       ├── history.py              # Chat history
-│       └── admin.py                # User management + audit log
+├── ui/                             # Legacy UI layer
+│   └── ...                         # (Removed)
 │
 ├── data/                           # Runtime data (gitignored)
 │   ├── documents/                  # Uploaded PDFs
@@ -141,7 +148,8 @@ PrivateGPT/
 
 | Category | Technology | Why |
 |----------|-----------|-----|
-| **UI** | Streamlit | Single-file web apps, built-in caching and streaming |
+| **UI** | Electron + HTML/JS/CSS | Desktop window with native OS integration |
+| **Backend API** | FastAPI | High performance async endpoints and SSE streaming |
 | **LLM** | Ollama | Local LLM server, REST API, model management |
 | **Framework** | LangChain + LangGraph | LLM abstractions + stateful graph pipelines |
 | **Embeddings** | all-MiniLM-L6-v2 | 384d, ~80 MB, fast CPU inference |

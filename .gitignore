@@ -34,3 +34,5 @@ sample.pdf
 .vscode/
 .idea/
 *.swp
+
+electron\node_modules

@@ -14,7 +14,10 @@
     "electron": "^33.0.0"
   },
   "devDependencies": {
-    "electron-builder": "^26.15.3"
+    "electron-builder": "26.15.3"
+  },
+  "overrides": {
+    "@noble/hashes": "1.7.1"
   },
   "build": {
     "appId": "com.privategpt.desktop",

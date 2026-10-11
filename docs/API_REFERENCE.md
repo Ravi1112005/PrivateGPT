@@ -1,6 +1,108 @@
 # 📖 API Reference
 
-Class-level documentation for all core modules. Each section maps to a source file.
+Complete API documentation for PrivateGPT v2.0. Covers both the **REST API** (FastAPI backend) and the **Python class-level API** (core modules).
+
+---
+
+## REST API — `backend/server.py`
+
+The FastAPI backend exposes all endpoints at `http://localhost:8765`. The Electron frontend communicates exclusively through this API.
+
+**Base URL:** `http://localhost:8765`
+**Version:** `2.0.0`
+
+### App Info
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/info` | App version, username, embedding model, default model, index status, document count |
+
+**Response:**
+```json
+{
+  "version": "2.0.0",
+  "username": "kalpe",
+  "embedding_model": "all-MiniLM-L6-v2",
+  "default_model": "phi3",
+  "index_exists": true,
+  "documents_count": 3
+}
+```
+
+### Ollama Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/ollama/status` | Server health, URL, model list, model count |
+| `POST` | `/api/ollama/start` | Start the Ollama server subprocess |
+| `GET` | `/api/ollama/models` | List local models with param count, quantization, family |
+| `GET` | `/api/ollama/recommended` | Curated model list with availability flags |
+| `POST` | `/api/ollama/pull` | Pull a model with SSE streaming progress |
+| `POST` | `/api/ollama/pull/sync` | Pull a model synchronously (blocking) |
+| `DELETE` | `/api/ollama/models/{model_name}` | Delete a locally stored model |
+
+### Document Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/documents` | List all indexed documents with metadata |
+| `POST` | `/api/documents/upload` | Upload and index PDF files (multipart form) |
+| `DELETE` | `/api/documents/{filename}` | Remove a document from the index |
+| `POST` | `/api/documents/rebuild` | Wipe and re-index all tracked documents |
+
+### Chat Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/chat` | Non-streaming full RAG query |
+| `POST` | `/api/chat/stream` | Streaming chat via SSE (sources → tokens → done) |
+
+**Request body (`ChatRequest`):**
+```json
+{
+  "question": "What is PBKDF2?",
+  "model": "phi3",
+  "session_id": "a1b2c3d4",
+  "filter_files": ["document.pdf"]
+}
+```
+
+**SSE stream events:**
+```
+data: {"type": "sources", "sources": [...], "retrieval_sec": 0.42}
+data: {"type": "token", "token": "PBKDF2"}
+data: {"type": "token", "token": " is"}
+...
+data: {"type": "done", "metrics": {"latency_sec": 5.2, "retrieval_sec": 0.42, "chunks_used": 4, "model": "phi3"}}
+```
+
+### Session Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/sessions` | List all sessions for the current OS user |
+| `POST` | `/api/sessions` | Create a new chat session |
+| `GET` | `/api/sessions/{session_id}` | Load a session by ID |
+| `DELETE` | `/api/sessions/{session_id}` | Delete a session |
+| `PATCH` | `/api/sessions/{session_id}` | Rename a session |
+| `GET` | `/api/sessions/{session_id}/export` | Export session as formatted text |
+
+---
+
+## Electron IPC — `electron/preload.js`
+
+The preload script exposes a minimal API to the renderer via `contextBridge`:
+
+| Method | IPC Channel | Description |
+|--------|-------------|-------------|
+| `getBackendUrl()` | `get-backend-url` | Returns the FastAPI backend URL |
+| `minimize()` | `window-minimize` | Minimize the window |
+| `maximize()` | `window-maximize` | Toggle maximize/restore |
+| `close()` | `window-close` | Close the window |
+| `isMaximized()` | `window-is-maximized` | Check if window is maximized |
+| `selectFiles()` | `select-files` | Open native file picker (PDF filter) |
+| `onBackendReady(cb)` | `backend-ready` | Event: backend is ready |
+| `onBackendError(cb)` | `backend-error` | Event: backend failed to start |
 
 ---
 
@@ -44,6 +146,8 @@ PDFProcessor(ocr_dpi: int = 300, tesseract_path: str = "")
 ```python
 EmbeddingsManager(model_name: str = "all-MiniLM-L6-v2")
 ```
+
+Accepts either a HuggingFace model name or a local filesystem path (used when `data/models/embeddings/all-MiniLM-L6-v2/config.json` exists).
 
 ### Public Methods
 
@@ -135,7 +239,7 @@ BackgroundEnricher(settings, embeddings: EmbeddingsManager, vsm: VectorStoreMana
 
 ## `core/graph/engine.py` — RAGGraphEngine
 
-**Purpose:** Drop-in replacement for the legacy QueryEngine. Exposes the same public API.
+**Purpose:** LangGraph-based RAG pipeline. Drop-in replacement for the legacy QueryEngine.
 
 ### Constructor
 
@@ -147,8 +251,8 @@ RAGGraphEngine(vsm: VectorStoreManager, settings: Settings)
 
 | Method | Signature | Returns | Description |
 |--------|-----------|---------|-------------|
-| `retrieve` | `(question, filter_files?) → (source_docs, context, prompt_text)` | Tuple | Phase 1: Retrieve + rerank. Used for immediate source chip display. |
-| `stream_answer` | `(prompt_text, model) → Generator[str]` | Token generator | Phase 2: Stream tokens from Ollama. Returned over SSE. |
+| `retrieve` | `(question, filter_files?) → (source_docs, context, prompt_text)` | Tuple | Phase 1: Retrieve + rerank. Used for immediate source chip display in SSE streaming. |
+| `stream_answer` | `(prompt_text, model) → Generator[str]` | Token generator | Phase 2: Stream tokens from Ollama. Returned over SSE to the frontend. |
 | `query` | `(question, model, filter_files?) → dict` | `{answer, sources, metrics, context}` | Full graph invocation (non-streaming). Used for session export. |
 
 ---
@@ -171,33 +275,17 @@ OllamaManager(base_url: str = "http://localhost:11434")
 | `get_status` | `() → dict` | `{running, url, models, model_count}` | Full status for UI status bar. |
 | `start` | `() → (bool, str)` | Success + message | Start Ollama server via subprocess. |
 | `list_models` | `() → List[str]` | Model names | List locally downloaded models. |
+| `is_available` | `(model_name: str) → bool` | Availability flag | Check if a specific model is already pulled locally. |
 | `pull` | `(model_name, stream_callback?) → (bool, str)` | Success + message | Download a model with streaming progress. |
 | `delete` | `(model_name) → (bool, str)` | Success + message | Remove a local model. |
 | `get_info` | `(model_name) → dict \| None` | Model details | Get param count, quantization, family. |
 
----
+### Module-Level Constants
 
-## `security/auth.py` — AuthManager
-
-**Purpose:** Local user authentication with PBKDF2-HMAC-SHA256 and audit logging.
-
-### Constructor
-
-```python
-AuthManager(security_dir: Path)
-```
-
-### Public Methods
-
-| Method | Signature | Returns | Description |
-|--------|-----------|---------|-------------|
-| `setup_default_admin` | `() → None` | — | Creates `admin/admin123` if no users exist. |
-| `authenticate` | `(username, password) → (bool, str)` | `(True, role)` or `(False, error)` | Verify credentials. |
-| `register` | `(username, password, role="user") → (bool, str)` | Success + message | Create a new user account. |
-| `change_password` | `(username, old_pass, new_pass) → (bool, str)` | Success + message | Update password. |
-| `delete` | `(username) → (bool, str)` | Success + message | Remove user (protects last admin). |
-| `list_users` | `() → List[dict]` | `[{username, role, created_at, last_login}]` | All registered users. |
-| `read_audit_log` | `(lines=200) → str` | Log text | Last N lines of the audit log. |
+| Constant | Description |
+|----------|-------------|
+| `OLLAMA_BASE_URL` | `"http://localhost:11434"` — Default Ollama server URL |
+| `RECOMMENDED_MODELS` | List of curated models with name, label, RAM requirements, and descriptions |
 
 ---
 
@@ -217,9 +305,10 @@ SessionManager(sessions_dir: Path)
 |--------|-----------|---------|-------------|
 | `create` | `(username, label?) → dict` | Session dict | Create a new chat session. |
 | `load` | `(session_id) → dict \| None` | Session data | Load a session by ID. |
-| `list_for_user` | `(username) → List[dict]` | Session summaries | All sessions for a user, sorted by date. |
+| `list_for_user` | `(username) → List[dict]` | Session summaries | All sessions for a user, sorted by modification date (newest first). |
 | `add_message` | `(session_id, role, content, metadata?) → None` | — | Append a message to a session. |
 | `delete` | `(session_id) → bool` | Success | Permanently remove a session. |
+| `rename` | `(session_id, new_label: str) → None` | — | Rename a session's label. |
 | `export_txt` | `(session_id) → str` | Formatted text | Export session as human-readable transcript. |
 
 ---
@@ -237,8 +326,9 @@ SessionManager(sessions_dir: Path)
 | `documents_dir` | `Path` | `data/documents/` | Permanent PDF storage |
 | `index_dir` | `Path` | `data/faiss_index/` | FAISS + BM25 indexes |
 | `sessions_dir` | `Path` | `data/sessions/` | Chat session JSON files |
-| `security_dir` | `Path` | `data/security/` | Auth data |
+| `models_dir` | `Path` | `data/models/embeddings/` | Cached embedding models for offline use |
 | `embedding_model` | `str` | `"all-MiniLM-L6-v2"` | Sentence-transformer model name |
+| `embedding_model_path` | `Path` | `data/models/embeddings/all-MiniLM-L6-v2` | Local path to cached embedding model |
 | `chunk_size` | `int` | `1000` | Max characters per chunk |
 | `chunk_overlap` | `int` | `200` | Overlap between adjacent chunks |
 | `fetch_k` | `int` | `25` | Wide candidate pool before filtering |
@@ -256,3 +346,9 @@ SessionManager(sessions_dir: Path)
 | `rerank_top_n` | `int` | `4` | Final chunks after reranking |
 | `ocr_dpi` | `int` | `300` | DPI for scanned page rendering |
 | `tesseract_path` | `str` | `""` | Custom Tesseract binary path |
+
+### Methods
+
+| Method | Signature | Returns | Description |
+|--------|-----------|---------|-------------|
+| `index_exists` | `() → bool` | — | True when a valid FAISS index is present on disk |

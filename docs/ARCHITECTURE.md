@@ -9,25 +9,27 @@ PrivateGPT is a fully air-gapped, local-first document intelligence system. It r
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
 │                     Electron Desktop Frontend                        │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────────┐ │
-│  │   Chat   │ │Documents │ │  Models  │ │ History  │ │   Admin   │ │
-│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └─────┬─────┘ │
-│       │             │            │             │             │       │
-│  ┌────┴─────────────┴────────────┴─────────────┴─────────────┴────┐ │
-│  │                       Sidebar (Navigation + State)              │ │
-│  └─────────────────────────────┬───────────────────────────────────┘ │
-└────────────────────────────────┼─────────────────────────────────────┘
-                                 │ HTTP + SSE (FastAPI)
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐               │
+│  │   Chat   │ │Documents │ │  Models  │ │ History  │               │
+│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘               │
+│       │             │            │             │                     │
+│  ┌────┴─────────────┴────────────┴─────────────┴────────────────┐   │
+│  │    Custom Title Bar + Sidebar Navigation + SPA Routing        │   │
+│  └─────────────────────────────┬────────────────────────────────┘   │
+│                                │ contextBridge (preload.js)          │
+└────────────────────────────────┼────────────────────────────────────┘
+                                 │ HTTP + SSE
                     ┌────────────┴────────────┐
-                    │      backend/server.py  │
-                    │   (REST API + Routing)  │
+                    │   backend/server.py     │
+                    │   FastAPI (port 8765)   │
+                    │   REST + SSE Streaming  │
                     └────────────┬────────────┘
                                  │
         ┌────────────────────────┼────────────────────────┐
         │                        │                        │
-┌───────┴───────┐    ┌───────────┴──────────┐   ┌────────┴────────┐
-│  core/ Layer  │    │  security/ Layer     │   │ sessions/ Layer │
-│  (Pure Python)│    │  (Auth + Audit)      │   │ (Chat History)  │
+┌───────┴───────┐    ┌──────────┴──────────┐   ┌────────┴────────┐
+│  core/ Layer  │    │  config/ Layer      │   │ sessions/ Layer │
+│  (Pure Python)│    │  (Settings)         │   │ (Chat History)  │
 └───────┬───────┘    └────────────────────┘   └─────────────────┘
         │
    ┌────┴──────────────────────────────────────────┐
@@ -69,23 +71,25 @@ Every component is selected for offline operation:
 - **FAISS** stores vector indexes on local disk — no Pinecone, no cloud vector DBs
 - **sentence-transformers** embeds text on the local CPU — no embedding API calls
 - **Tesseract OCR** runs locally — no Google Vision, no AWS Textract
-- **PBKDF2-HMAC-SHA256** for password hashing — no external auth services
+- **Embedding model** is pre-downloaded to `data/models/embeddings/` for fully offline startup
 
-The only network call is the initial one-time download of Ollama models. After that, the system is fully functional without internet.
+The only network calls are the initial one-time downloads of Ollama models and the embedding model. After that, the system is fully functional without internet. The `download_embeddings.py` script pre-caches the embedding model locally.
 
 ### 2. Clean Layer Separation
 
 ```
 ┌─────────────────────────────────────┐
 │  Electron UI Layer (electron/)      │  Desktop frontend. No business logic.
-│  - SPA rendering                    │  Communicates via REST and SSE.
-│  - Main process and Window          │
+│  - main.js (backend launcher)       │  Communicates via REST and SSE.
+│  - preload.js (secure IPC bridge)   │  Context isolation enabled.
+│  - renderer/ (HTML/JS/CSS SPA)      │  No nodeIntegration.
 ├─────────────────────────────────────┤
-│  FastAPI Backend (backend/)         │  REST API + Event routing.
+│  FastAPI Backend (backend/)         │  REST API + SSE Streaming.
 │  - Endpoint definitions             │  Connects the UI to the core logic.
-│  - SSE Streaming endpoints          │
+│  - Singleton wiring (DI)            │  All state lives server-side.
+│  - SSE streaming for chat           │
 ├─────────────────────────────────────┤
-│  Core Layer (core/)                 │  Pure Python. Zero UI/Backend dependencies.
+│  Core Layer (core/)                 │  Pure Python. Zero UI/Backend deps.
 │  - PDF extraction                    │  Can be tested independently.
 │  - Embeddings, vector store          │  Thread-safe where needed.
 │  - LangGraph RAG pipeline           │
@@ -94,8 +98,8 @@ The only network call is the initial one-time download of Ollama models. After t
 │  - All paths, model names, params    │  Auto-creates dirs on import.
 ├─────────────────────────────────────┤
 │  Support Layers                     │
-│  - security/ (auth + audit)          │  PBKDF2 hashing, JSON persistence.
 │  - sessions/ (chat history)          │  Per-user JSON file storage.
+│  - security/ (placeholder)           │  Auth removed in v2.0.
 └─────────────────────────────────────┘
 ```
 
@@ -103,14 +107,15 @@ The only network call is the initial one-time download of Ollama models. After t
 
 ### 3. Singleton Pattern via Module-Level Instantiation
 
-Heavy objects are loaded exactly once and kept in RAM:
+Heavy objects are loaded exactly once at FastAPI startup and kept in RAM:
 
 | Object | Load time | Memory | Reused across |
 |--------|-----------|--------|---------------|
 | `EmbeddingsManager` | ~10s (first load) | ~80 MB | All requests |
 | `VectorStoreManager` | ~4s (first load) | Varies by index size | All requests |
+| `IngestionPipeline` | Instant | Negligible | All requests |
+| `RAGGraphEngine` | Instant | Negligible | All requests |
 | `OllamaManager` | Instant | Negligible | All requests |
-| `AuthManager` | Instant | Negligible | All requests |
 | `SessionManager` | Instant | Negligible | All requests |
 
 **Why:** Loading the embedding model from disk takes 10 seconds. By instantiating it once at the module level in the FastAPI backend, it stays resident in memory and handles all subsequent API requests instantly.
@@ -121,13 +126,39 @@ Core components receive their dependencies through constructor arguments, not gl
 
 ```python
 # In backend/server.py — the only place where wiring happens
-embeddings = EmbeddingsManager(settings.embedding_model)
+model_to_load = str(settings.embedding_model_path) if (settings.embedding_model_path / "config.json").exists() else settings.embedding_model
+embeddings = EmbeddingsManager(model_to_load)
 embeddings.preload()
 vsm = VectorStoreManager(settings.index_dir, embeddings)
 ollama = OllamaManager()
+session_mgr = SessionManager(settings.sessions_dir)
+pipeline = IngestionPipeline(settings, embeddings, vsm)
+engine = RAGGraphEngine(vsm, settings)
 ```
 
 **Why:** This makes every core class independently testable. You can construct a `VectorStoreManager` with a mock `EmbeddingsManager` in a unit test — no UI, no Ollama, no disk.
+
+### 5. Electron ↔ Backend Communication
+
+The Electron app uses a secure, isolation-first architecture:
+
+```
+Electron Main Process (main.js)
+├── Spawns FastAPI backend as child process
+├── Manages BrowserWindow lifecycle
+├── Handles IPC for window controls + file dialogs
+│
+├── preload.js (contextBridge)
+│   └── Exposes minimal API: getBackendUrl, minimize, maximize,
+│       close, selectFiles, onBackendReady, onBackendError
+│
+└── Renderer Process (renderer/)
+    ├── index.html — App shell with custom title bar
+    ├── app.js — SPA logic (REST calls + SSE streaming)
+    └── styles.css — Dark theme with glassmorphism
+```
+
+**Security:** `nodeIntegration: false`, `contextIsolation: true`. The renderer has no access to Node.js APIs — all system calls go through the `preload.js` bridge.
 
 ---
 
@@ -135,57 +166,67 @@ ollama = OllamaManager()
 
 ```
 PrivateGPT/
-├── app.py                      # Entry point + DI wiring
-├── requirements.txt            # Python dependencies
-├── .gitignore
+├── backend/
+│   ├── __init__.py
+│   └── server.py               # FastAPI REST + SSE backend (v2.0.0)
+│
+├── electron/                    # Electron desktop frontend
+│   ├── main.js                  # Main process (backend launcher + window)
+│   ├── preload.js               # Secure IPC bridge (contextBridge)
+│   ├── package.json             # Electron + electron-builder config
+│   ├── installer.nsh            # NSIS installer customization
+│   ├── assets/                  # App icons
+│   └── renderer/                # SPA frontend
+│       ├── index.html           # HTML shell with custom title bar
+│       ├── app.js               # SPA logic (32KB)
+│       └── styles.css           # Dark theme CSS (28KB)
 │
 ├── config/
 │   ├── __init__.py
-│   └── settings.py             # Settings dataclass (singleton)
+│   └── settings.py              # Settings dataclass (singleton)
 │
-├── core/                       # Pure business logic (no Streamlit)
+├── core/                        # Pure business logic
 │   ├── __init__.py
-│   ├── pdf_processor.py        # 3-tier PDF extraction (text/table/OCR)
-│   ├── embeddings.py           # EmbeddingsManager (sentence-transformers)
-│   ├── ingestion.py            # IngestionPipeline (PDF → chunks → FAISS)
-│   ├── vector_store.py         # VectorStoreManager (FAISS + BM25 + neighbors)
-│   ├── enrichment.py           # BackgroundEnricher (daemon thread)
-│   ├── ollama_manager.py       # OllamaManager (server + model lifecycle)
-│   ├── ssl_patch.py            # Shared SSL bypass for HuggingFace
-│   ├── query_engine_legacy.py  # Legacy query engine (superseded by graph/)
-│   └── graph/                  # LangGraph RAG pipeline
+│   ├── pdf_processor.py         # 3-tier PDF extraction (text/table/OCR)
+│   ├── embeddings.py            # EmbeddingsManager (sentence-transformers)
+│   ├── ingestion.py             # IngestionPipeline (PDF → chunks → FAISS)
+│   ├── vector_store.py          # VectorStoreManager (FAISS + BM25 + neighbors)
+│   ├── enrichment.py            # BackgroundEnricher (daemon thread)
+│   ├── ollama_manager.py        # OllamaManager (server + model lifecycle)
+│   ├── ssl_patch.py             # Shared SSL bypass for HuggingFace
+│   ├── query_engine_legacy.py   # Legacy query engine (superseded by graph/)
+│   └── graph/                   # LangGraph RAG pipeline
 │       ├── __init__.py
-│       ├── state.py            # RAGState TypedDict
-│       ├── nodes.py            # 6 graph node functions
-│       ├── builder.py          # StateGraph construction
-│       └── engine.py           # RAGGraphEngine (public API)
+│       ├── state.py             # RAGState TypedDict
+│       ├── nodes.py             # 6 graph node functions
+│       ├── builder.py           # StateGraph construction
+│       └── engine.py            # RAGGraphEngine (public API)
 │
 ├── security/
-│   ├── __init__.py
-│   └── auth.py                 # AuthManager (PBKDF2 + audit log)
+│   └── __init__.py              # Placeholder (auth removed in v2.0)
 │
 ├── sessions/
-│   └── manager.py              # SessionManager (per-user JSON files)
+│   └── manager.py               # SessionManager (per-user JSON files)
 │
-├── ui/                         # Streamlit presentation layer
-│   ├── __init__.py
-│   ├── styles.py               # CSS injection (dark theme)
-│   ├── sidebar.py              # Sidebar rendering
-│   └── pages/
-│       ├── __init__.py
-│       ├── chat.py             # Chat page (streaming)
-│       ├── documents.py        # Document Manager page
-│       ├── models.py           # Model Manager page
-│       ├── history.py          # Chat History page
-│       └── admin.py            # User Management + Audit Log
+├── tests/
+│   └── test_backend.py          # Automated backend tests (pytest)
 │
-├── data/                       # Runtime data (gitignored)
-│   ├── documents/              # Permanent PDF copies
-│   ├── faiss_index/            # FAISS + BM25 indexes + metadata
-│   ├── sessions/               # Per-user chat session JSON files
-│   └── security/               # users.json + audit.log
+├── .github/workflows/
+│   └── ci-cd.yml                # CI: pytest | CD: electron-builder
 │
-└── docs/                       # This documentation
+├── data/                        # Runtime data (gitignored)
+│   ├── documents/               # Permanent PDF copies
+│   ├── faiss_index/             # FAISS + BM25 indexes + metadata
+│   ├── sessions/                # Per-user chat session JSON files
+│   └── models/embeddings/       # Cached embedding model
+│
+├── requirements.txt             # Python dependencies (pinned versions)
+├── download_embeddings.py       # Pre-download embeddings for offline use
+├── setup_env.bat                # Automated environment setup
+├── start-app.bat                # Production launcher
+├── start-dev.bat                # Development mode launcher (hot-reload)
+│
+└── docs/                        # This documentation
 ```
 
 ---
@@ -194,12 +235,11 @@ PrivateGPT/
 
 ```mermaid
 graph TD
-    A["app.py<br/>(Entry + DI)"] --> B["EmbeddingsManager"]
+    A["backend/server.py<br/>(Singleton Wiring)"] --> B["EmbeddingsManager"]
     A --> C["VectorStoreManager"]
     A --> D["IngestionPipeline"]
     A --> E["RAGGraphEngine"]
     A --> F["OllamaManager"]
-    A --> G["AuthManager"]
     A --> H["SessionManager"]
 
     D -->|"uses"| I["PDFProcessor"]
@@ -213,14 +253,18 @@ graph TD
     J -->|"enriches via"| F
     J -->|"re-indexes"| C
 
+    K["Electron main.js"] -->|"spawns"| A
+    K -->|"serves"| L["renderer/"]
+    L -->|"HTTP + SSE"| A
+
     subgraph "LangGraph Pipeline"
-        E --> K["retrieve"]
-        K --> L["rerank"]
-        L --> M["check_retrieval"]
-        M -->|"ok"| N["generate"]
-        M -->|"fail"| P["finalize"]
-        N --> O["validate"]
-        O --> P
+        E --> M["retrieve"]
+        M --> N["rerank"]
+        N --> O["check_retrieval"]
+        O -->|"ok"| P["generate"]
+        O -->|"fail"| R["finalize"]
+        P --> Q["validate"]
+        Q --> R
     end
 ```
 
@@ -230,7 +274,28 @@ graph TD
 
 | Flow | Path |
 |------|------|
-| **PDF → Index** | Upload → `PDFProcessor` (3-tier) → `RecursiveCharacterTextSplitter` → `FAISS.from_documents()` + `BM25Okapi` → disk |
-| **Query → Answer** | Question → `hybrid_search` (FAISS + BM25 RRF) → neighbor expansion → cross-encoder rerank → prompt template → Ollama LLM → streaming tokens |
-| **Login → Session** | Username/password → `PBKDF2-HMAC-SHA256` verify → audit log → `SessionManager.create()` → `st.session_state` |
+| **PDF → Index** | Upload (Electron) → FastAPI `/api/documents/upload` → `PDFProcessor` (3-tier) → `RecursiveCharacterTextSplitter` → `FAISS.from_documents()` + `BM25Okapi` → disk |
+| **Query → Answer** | Question (Electron) → FastAPI `/api/chat/stream` → `retrieve()` → SSE sources → `stream_answer()` → SSE tokens → `SessionManager.add_message()` |
+| **Full Graph** | Question → `hybrid_search` (FAISS + BM25 RRF) → neighbor expansion → cross-encoder rerank → prompt template → Ollama LLM → validate → finalize |
 | **Enrichment** | Background daemon → per-chunk LLM context generation → re-embed → replace FAISS index → `mark_dirty()` |
+| **App Launch** | `start-app.bat` → FastAPI backend (uvicorn) → Electron `main.js` → `waitForBackend()` → renderer loads |
+
+---
+
+## CI/CD Pipeline
+
+```
+Push to main → GitHub Actions
+├── CI: Test Job (windows-latest)
+│   ├── Python 3.12 setup
+│   ├── pip install requirements + pytest
+│   └── pytest tests/test_backend.py
+│
+└── CD: Build Job (windows-latest, after test passes)
+    ├── Node.js 25.2.1 setup
+    ├── npm ci (electron/)
+    ├── npm run build (electron-builder)
+    └── Upload PrivateGPT-Setup.exe artifact
+```
+
+The pipeline runs on every push and pull request to `main`. The build job only runs on pushes to `main` (not PRs).

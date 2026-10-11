@@ -1,109 +1,79 @@
 # ⚙️ Functionalities
 
-A complete inventory of every feature in PrivateGPT, organized by the UI page where it surfaces.
+A complete inventory of every feature in PrivateGPT v2.0, organized by functional area.
 
 ---
 
-## 🔒 Authentication System
+## 🖥️ Desktop Application (Electron)
 
 | Feature | Description | Source |
 |---------|-------------|--------|
-| **Sign In** | Username + password login with PBKDF2-HMAC-SHA256 verification | `security/auth.py` → `authenticate()` |
-| **Create Account** | Self-registration with password validation (8+ chars) | `security/auth.py` → `register()` |
-| **Default Admin** | Auto-creates `admin / admin123` on first run | `security/auth.py` → `setup_default_admin()` |
-| **Role-Based Access** | Two roles: `admin` (full access) and `user` (no admin pages) | `app.py` line 173 |
-| **Timing-Safe Auth** | Uses `hmac.compare_digest()` to prevent timing attacks | `security/auth.py` → `_verify()` |
-| **Audit Logging** | Every auth event logged with timestamp, event type, username | `security/auth.py` → `_audit()` |
+| **Custom Title Bar** | Frameless window with custom minimize, maximize, and close buttons | `electron/main.js` → `createWindow()` |
+| **Backend Auto-Launch** | FastAPI backend spawned as child process on app start | `electron/main.js` → `startBackend()` |
+| **Backend Health Check** | Waits up to 30 seconds for backend to be ready before signaling renderer | `electron/main.js` → `waitForBackend()` |
+| **Native File Picker** | OS-native file dialog for PDF selection (multi-select enabled) | `electron/main.js` → `select-files` IPC |
+| **Secure IPC Bridge** | `contextBridge` exposes minimal API — no `nodeIntegration` in renderer | `electron/preload.js` |
+| **Dark Theme** | GitHub-inspired dark color palette with glassmorphism elements | `electron/renderer/styles.css` |
+| **SPA Routing** | Single-page app with client-side navigation between all views | `electron/renderer/app.js` |
+| **Backend Reuse** | Detects if backend is already running (dev mode) and skips launch | `electron/main.js` → `isBackendAlreadyRunning()` |
 
 ---
 
-## 💬 Chat Page
+## 💬 Chat
 
 | Feature | Description | Source |
 |---------|-------------|--------|
-| **Streaming Answers** | Tokens appear one-by-one with a blinking cursor — no blank wait | `ui/pages/chat.py` line 107 |
-| **Source Citations** | Green chips show source file + page for each retrieved chunk | `ui/pages/chat.py` → `_render_sources()` |
-| **Performance Metrics** | Total latency, retrieval time, chunk count, model name | `ui/pages/chat.py` → `_render_metrics()` |
-| **Debug Context** | Toggle to see the raw context sent to the LLM | `ui/pages/chat.py` line 64 |
-| **Conversation Memory** | Full message history persisted per session, survives page reload | `sessions/manager.py` → `add_message()` |
-| **New Chat** | Start a fresh conversation (creates a new session) | `ui/pages/chat.py` line 44 |
-| **Pre-flight Checks** | Guards: Ollama running? Models downloaded? Docs indexed? Docs selected? | `ui/pages/chat.py` lines 28-39 |
+| **Streaming Answers** | Tokens appear one-by-one via SSE — no blank wait | `backend/server.py` → `/api/chat/stream` |
+| **Source Citations** | Source file + page badges shown immediately after retrieval completes | `backend/server.py` → SSE `sources` event |
+| **Performance Metrics** | Total latency, retrieval time, chunk count, model name | `backend/server.py` → SSE `done` event |
+| **Conversation Memory** | Full message history persisted per session via backend API | `sessions/manager.py` → `add_message()` |
+| **New Chat** | Start a fresh conversation (creates a new session via REST) | `backend/server.py` → `POST /api/sessions` |
+| **Document Filter** | Query only search selected documents (passed as `filter_files`) | `core/graph/engine.py` → `retrieve()` |
+| **Model Selection** | Switch active LLM model per query | `backend/server.py` → `ChatRequest.model` |
+| **Error Handling** | Generation errors caught and displayed inline in the stream | `backend/server.py` → SSE error handling |
 
 ---
 
-## 📄 Documents Page
+## 📄 Documents
 
 | Feature | Description | Source |
 |---------|-------------|--------|
-| **Multi-file Upload** | Upload multiple PDFs simultaneously via drag-and-drop or file picker | `ui/pages/documents.py` line 31 |
-| **Progress Bar** | Per-file progress feedback during indexing | `ui/pages/documents.py` → callback `cb()` |
+| **Multi-file Upload** | Upload multiple PDFs via native file picker or REST API | `backend/server.py` → `POST /api/documents/upload` |
 | **Idempotent Indexing** | SHA-256 hash check — unchanged files are skipped automatically | `core/ingestion.py` → `_file_hash()` |
 | **3-Tier PDF Extraction** | Handles digital text, tables (→ Markdown), and scanned pages (OCR) | `core/pdf_processor.py` → `extract()` |
 | **Text Cleaning** | Removes headers, footers, page numbers, boilerplate, junk pages | `core/pdf_processor.py` → `_clean_text()` |
-| **Migration Banner** | Shows warning when embedding backend changes — prompts rebuild | `ui/pages/documents.py` line 22 |
-| **Document List** | Shows all indexed docs with page count, chunk count, delete button | `ui/pages/documents.py` line 89 |
-| **Delete Document** | Remove from metadata + permanent storage (requires rebuild) | `core/ingestion.py` → `remove()` |
-| **Full Rebuild** | Re-index all documents from scratch with current settings | `core/ingestion.py` → `rebuild()` |
-| **Chunk Statistics** | Shows total chunks and total docs after indexing | `ui/pages/documents.py` line 77 |
+| **Document List** | Shows all indexed docs with page count, chunk count, indexed date | `backend/server.py` → `GET /api/documents` |
+| **Delete Document** | Remove from metadata + permanent storage (requires rebuild) | `backend/server.py` → `DELETE /api/documents/{filename}` |
+| **Full Rebuild** | Re-index all documents from scratch with current settings | `backend/server.py` → `POST /api/documents/rebuild` |
+| **Permanent Storage** | PDFs copied to `data/documents/` for persistence across sessions | `core/ingestion.py` → `_ensure_permanent_copy()` |
+| **Migration Banner** | Automatic full re-index when embedding backend version changes | `core/ingestion.py` → `EMBEDDING_BACKEND` |
 
 ---
 
-## 🤖 Models Page
+## 🤖 Models
 
 | Feature | Description | Source |
 |---------|-------------|--------|
-| **Downloaded Models** | List all locally available Ollama models with param count + quantization | `ui/pages/models.py` line 22 |
-| **Recommended Models** | Curated list with RAM requirements and descriptions | `core/ollama_manager.py` → `RECOMMENDED_MODELS` |
-| **Streaming Pull** | Download models with real-time progress bar (% completion) | `core/ollama_manager.py` → `pull()` |
-| **Custom Pull** | Pull any model by name (e.g., `gemma:2b`) | `ui/pages/models.py` line 73 |
-| **Delete Model** | Remove locally downloaded models to free disk space | `core/ollama_manager.py` → `delete()` |
+| **Downloaded Models** | List all locally available Ollama models with param count + quantization | `backend/server.py` → `GET /api/ollama/models` |
+| **Recommended Models** | Curated list with RAM requirements, descriptions, and availability flags | `backend/server.py` → `GET /api/ollama/recommended` |
+| **Pull Model (Sync)** | Download models synchronously | `backend/server.py` → `POST /api/ollama/pull/sync` |
+| **Pull Model (Stream)** | Download models with SSE streaming progress | `backend/server.py` → `POST /api/ollama/pull` |
+| **Delete Model** | Remove locally downloaded models to free disk space | `backend/server.py` → `DELETE /api/ollama/models/{name}` |
 | **Model Info** | Show parameter size, quantization level, model family | `core/ollama_manager.py` → `get_info()` |
+| **Availability Check** | Check if a specific model is already pulled locally | `core/ollama_manager.py` → `is_available()` |
+| **Server Management** | Start Ollama server from the app if not running | `backend/server.py` → `POST /api/ollama/start` |
 
 ---
 
-## 🕘 History Page
+## 🕘 History
 
 | Feature | Description | Source |
 |---------|-------------|--------|
-| **Session List** | All past chat sessions for the current user, sorted by date | `sessions/manager.py` → `list_for_user()` |
-| **Load Session** | Restore a previous conversation into the chat view | `ui/pages/history.py` line 25 |
-| **Export to TXT** | Download a formatted text transcript of any session | `sessions/manager.py` → `export_txt()` |
-| **Delete Session** | Permanently remove a chat session | `sessions/manager.py` → `delete()` |
-
----
-
-## 👤 Admin: User Management (admin-only)
-
-| Feature | Description | Source |
-|---------|-------------|--------|
-| **Create User** | Admin can create accounts with chosen role | `ui/pages/admin.py` → `render_users_page()` |
-| **User List** | All users with role, creation date, last login | `security/auth.py` → `list_users()` |
-| **Delete User** | Remove any user (protects last admin from deletion) | `security/auth.py` → `delete()` |
-| **Change Password** | Admin can change their own password | `security/auth.py` → `change_password()` |
-
----
-
-## 📋 Admin: Audit Log (admin-only)
-
-| Feature | Description | Source |
-|---------|-------------|--------|
-| **View Audit Log** | Last 200 lines of auth events | `ui/pages/admin.py` → `render_audit_page()` |
-| **Download Log** | Export full audit log as text file | `ui/pages/admin.py` line 49 |
-
----
-
-## Sidebar (Global)
-
-| Feature | Description | Source |
-|---------|-------------|--------|
-| **Ollama Status** | Green/red indicator for server health | `ui/sidebar.py` line 47 |
-| **Start Ollama** | One-click server launch (auto-detects platform) | `core/ollama_manager.py` → `start()` |
-| **Navigation** | Tab-based routing to all pages | `ui/sidebar.py` line 61 |
-| **Document Filter** | Multi-select filter — queries only search selected docs | `ui/sidebar.py` line 84 |
-| **Model Selector** | Switch active LLM model from dropdown | `ui/sidebar.py` line 97 |
-| **Debug Toggle** | Show/hide raw context sent to LLM in chat | `ui/sidebar.py` line 105 |
-| **Enrichment Badge** | Live progress indicator: `⚡ Enhancing: 45%` | `ui/sidebar.py` line 117 |
-| **Sign Out** | Clears all session state and redirects to login | `ui/sidebar.py` line 34 |
+| **Session List** | All past chat sessions for the current OS user, sorted by date | `backend/server.py` → `GET /api/sessions` |
+| **Load Session** | Restore a previous conversation by session ID | `backend/server.py` → `GET /api/sessions/{id}` |
+| **Rename Session** | Change the label of an existing session | `backend/server.py` → `PATCH /api/sessions/{id}` |
+| **Export to TXT** | Download a formatted text transcript of any session | `backend/server.py` → `GET /api/sessions/{id}/export` |
+| **Delete Session** | Permanently remove a chat session | `backend/server.py` → `DELETE /api/sessions/{id}` |
 
 ---
 
@@ -119,3 +89,29 @@ A complete inventory of every feature in PrivateGPT, organized by the UI page wh
 | **OCR Support** | Scanned/image PDFs are rendered at 300 DPI and OCR'd via Tesseract | `core/pdf_processor.py` → `_ocr_page()` |
 | **Table Extraction** | Tables detected via `PyMuPDF.find_tables()`, converted to Markdown | `core/pdf_processor.py` → `_extract_tables()` |
 | **Legacy Data Migration** | Auto-copies data from pre-refactor flat directories to `data/` | `config/settings.py` → `_migrate_legacy_data()` |
+| **Offline Embeddings** | Pre-download embedding model for fully offline startup | `download_embeddings.py` → `download_model()` |
+
+---
+
+## 🔧 DevOps & Tooling
+
+| Feature | Description | Source |
+|---------|-------------|--------|
+| **CI Pipeline** | Automated pytest on every push/PR to `main` (Windows runner) | `.github/workflows/ci-cd.yml` → `test` job |
+| **CD Pipeline** | Automated electron-builder on push to `main`, uploads `.exe` artifact | `.github/workflows/ci-cd.yml` → `build` job |
+| **Backend Tests** | API info, Ollama status, document listing, session CRUD tests | `tests/test_backend.py` |
+| **Dev Mode** | Hot-reload backend + Electron launch via `start-dev.bat` | `start-dev.bat` |
+| **Production Launch** | Venv check + Electron install + backend start + Electron launch | `start-app.bat` |
+| **Environment Setup** | Automated Python venv, pip install, embedding download, Ollama install | `setup_env.bat` |
+| **NSIS Installer** | Custom installer runs `setup_env.bat` post-install, cleans venv on uninstall | `electron/installer.nsh` |
+| **Distributable Build** | electron-builder produces Windows NSIS installer | `electron/package.json` → `build` config |
+
+---
+
+## User Identity
+
+| Feature | Description | Source |
+|---------|-------------|--------|
+| **OS-Level Identity** | Current OS username detected via `getpass.getuser()` | `backend/server.py` → `USERNAME` |
+| **Per-User Sessions** | Sessions filtered by username field — users only see their own history | `sessions/manager.py` → `list_for_user()` |
+| **No Authentication** | Auth system removed in v2.0 — app uses OS-level user identity | `security/__init__.py` |

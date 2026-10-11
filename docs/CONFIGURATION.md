@@ -24,7 +24,7 @@ print(settings.chunk_size)  # 1000
 ```
 
 The `Settings` dataclass is instantiated once at module import time. Its `__post_init__` method:
-1. Creates all `data/` subdirectories if they don't exist
+1. Creates all `data/` subdirectories if they don't exist (`data/`, `data/documents/`, `data/faiss_index/`, `data/sessions/`, `data/models/embeddings/`)
 2. Runs one-time legacy data migration (from flat dirs to `data/`)
 
 ---
@@ -40,13 +40,16 @@ The `Settings` dataclass is instantiated once at module import time. Its `__post
 | `documents_dir` | `data/documents/` | Permanent copies of uploaded PDFs |
 | `index_dir` | `data/faiss_index/` | FAISS index, BM25 index, metadata |
 | `sessions_dir` | `data/sessions/` | Per-user chat session JSON files |
-| `security_dir` | `data/security/` | `users.json` + `audit.log` |
+| `models_dir` | `data/models/embeddings/` | Cached embedding models for offline use |
 
 ### Embedding Model
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `embedding_model` | `"all-MiniLM-L6-v2"` | Sentence-transformer model name. 384 dimensions, ~80 MB. |
+| `embedding_model_path` | `data/models/embeddings/all-MiniLM-L6-v2` | Local filesystem path for the cached embedding model. When `config.json` exists at this path, the model is loaded from disk instead of HuggingFace. |
+
+**Offline model loading:** At startup, `backend/server.py` checks if `embedding_model_path / "config.json"` exists. If so, it loads from the local path; otherwise, it downloads from HuggingFace. Use `python download_embeddings.py` to pre-cache the model.
 
 ### Document Chunking
 
@@ -76,7 +79,7 @@ The `Settings` dataclass is instantiated once at module import time. Its `__post
 
 | Parameter | Default | Effect |
 |-----------|---------|--------|
-| `default_model` | `"phi3"` | Ollama model used for queries. Can be changed from the sidebar. |
+| `default_model` | `"phi3"` | Ollama model used for queries. Can be changed from the frontend. |
 | `llm_temperature` | `0.1` | Controls answer randomness. 0.0 = deterministic, 1.0 = creative. |
 
 **Tuning guidance:**
@@ -136,13 +139,17 @@ The `Settings` dataclass is instantiated once at module import time. Its `__post
 These are computed from the base settings and cannot be set directly:
 
 | Property | Value | Used By |
-|----------|-------|---------|
+|----------|-------|---------| 
 | `index_faiss_path` | `data/faiss_index/index.faiss` | VectorStoreManager |
 | `index_meta_path` | `data/faiss_index/doc_metadata.json` | IngestionPipeline |
 | `index_state_path` | `data/faiss_index/index_state.json` | IngestionPipeline |
-| `users_file` | `data/security/users.json` | AuthManager |
-| `audit_file` | `data/security/audit.log` | AuthManager |
 | `bm25_index_path` | `data/faiss_index/bm25_index.pkl` | IngestionPipeline |
+
+### Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `index_exists()` | `bool` | True when a valid FAISS index (`index.faiss`) is present on disk |
 
 ---
 
@@ -152,4 +159,25 @@ These are computed from the base settings and cannot be set directly:
 2. Modify the default value of any field
 3. Restart the app (`start-app.bat`)
 
-**If you change `embedding_model`:** You must also bump the `EMBEDDING_BACKEND` constant in `core/ingestion.py` and rebuild the index. The app will show a migration banner automatically.
+**If you change `embedding_model`:** You must also:
+1. Update `embedding_model_path` to point to the new model
+2. Run `python download_embeddings.py` to cache the new model locally
+3. Bump the `EMBEDDING_BACKEND` constant in `core/ingestion.py`
+4. Rebuild the index — the app will trigger automatic full re-index on backend change
+
+---
+
+## Environment & Startup
+
+The backend (`backend/server.py`) performs intelligent model loading at startup:
+
+```python
+model_to_load = str(settings.embedding_model_path) \
+    if (settings.embedding_model_path / "config.json").exists() \
+    else settings.embedding_model
+embeddings = EmbeddingsManager(model_to_load)
+```
+
+This means:
+- **If `download_embeddings.py` has been run:** Loads from local disk (fast, no internet needed)
+- **If not:** Downloads from HuggingFace on first run (requires internet, ~80 MB)
